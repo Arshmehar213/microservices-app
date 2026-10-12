@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskFlow &mdash; Sign in</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">TF</div>
+        <div class="brand-name">TaskFlow</div>
+      </div>
+
+      <div class="auth-tabs">
+        <div class="auth-tab active" data-tab="login">Sign in</div>
+        <div class="auth-tab" data-tab="register">Create account</div>
+      </div>
+
+      <div class="auth-error" id="auth-error"></div>
+
+      <!-- Login form -->
+      <form id="login-form">
+        <div class="field">
+          <label for="login-username">Username</label>
+          <input id="login-username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      </form>
+
+      <!-- Register form -->
+      <form id="register-form" style="display:none">
+        <div class="field">
+          <label for="reg-display">Display name</label>
+          <input id="reg-display" autocomplete="name" required>
+        </div>
+        <div class="field">
+          <label for="reg-username">Username</label>
+          <input id="reg-username" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="reg-password">Password</label>
+          <input id="reg-password" type="password" autocomplete="new-password" required>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:5px;">At least 6 characters</div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Create account</button>
+      </form>
+
+      <p class="auth-hint">Runs on 8 independent services &mdash; see the <a href="status.html" style="color:var(--accent)">status page</a> once signed in.</p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    const tabs = document.querySelectorAll(".auth-tab");
+    const loginForm = document.getElementById("login-form");
+    const registerForm = document.getElementById("register-form");
+    const errorBox = document.getElementById("auth-error");
+
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        tabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        errorBox.style.display = "none";
+        const isLogin = tab.dataset.tab === "login";
+        loginForm.style.display = isLogin ? "block" : "none";
+        registerForm.style.display = isLogin ? "none" : "block";
+      });
+    });
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = "block";
+    }
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.style.display = "none";
+      const username = document.getElementById("login-username").value.trim();
+      const password = document.getElementById("login-password").value;
+      try {
+        const data = await TaskFlow.request("/auth/login", { method: "POST", auth: false, body: { username, password } });
+        TaskFlow.setSession(data.token, data.user);
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    registerForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorBox.style.display = "none";
+      const display_name = document.getElementById("reg-display").value.trim();
+      const username = document.getElementById("reg-username").value.trim();
+      const password = document.getElementById("reg-password").value;
+      try {
+        const data = await TaskFlow.request("/auth/register", { method: "POST", auth: false, body: { username, password, display_name } });
+        TaskFlow.setSession(data.token, data.user);
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    // If already signed in, skip straight to the dashboard.
+    if (TaskFlow.getToken()) window.location.href = "dashboard.html";
+  </script>
+</body>
+</html>

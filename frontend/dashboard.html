@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskFlow &mdash; Tasks</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+    <main class="main">
+      <div class="page-header">
+        <p class="eyebrow">task-service &middot; category-service &middot; notification-service</p>
+        <h1>Your tasks</h1>
+        <p>Create tasks, group them with categories, and get a reminder when you set a due date.</p>
+      </div>
+
+      <div class="grid-2">
+        <!-- Left column: task creation + list -->
+        <div>
+          <div class="panel">
+            <p class="panel-title">New task</p>
+            <p class="panel-sub">Posts to task-service. A due date triggers a call to notification-service.</p>
+            <form id="task-form">
+              <div class="field">
+                <label for="task-title">Title</label>
+                <input id="task-title" placeholder="e.g. Draft the proposal" required>
+              </div>
+              <div class="field">
+                <label for="task-desc">Description (optional)</label>
+                <textarea id="task-desc" placeholder="Any extra detail..."></textarea>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="task-category">Category</label>
+                  <select id="task-category"><option value="">None</option></select>
+                </div>
+                <div class="field">
+                  <label for="task-due">Due date (optional)</label>
+                  <input id="task-due" type="date">
+                </div>
+              </div>
+              <button class="btn btn-primary btn-block" type="submit">Add task</button>
+            </form>
+          </div>
+
+          <div class="panel">
+            <p class="panel-title">
+              All tasks
+              <span style="display:flex;gap:6px;">
+                <button class="btn btn-ghost" data-filter="" style="padding:5px 10px;font-size:11.5px;">All</button>
+                <button class="btn btn-ghost" data-filter="pending" style="padding:5px 10px;font-size:11.5px;">Pending</button>
+                <button class="btn btn-ghost" data-filter="completed" style="padding:5px 10px;font-size:11.5px;">Done</button>
+              </span>
+            </p>
+            <div id="task-list"><div class="empty-state">Loading tasks…</div></div>
+          </div>
+        </div>
+
+        <!-- Right column: categories + notifications -->
+        <div>
+          <div class="panel">
+            <p class="panel-title">Categories</p>
+            <p class="panel-sub">Stored in category-service, referenced by tasks via category_id.</p>
+            <form id="category-form" class="field-row" style="margin-bottom:6px;">
+              <div class="field" style="margin-bottom:0;">
+                <input id="category-name" placeholder="New category name" required>
+              </div>
+              <button class="btn btn-ghost" type="submit" style="flex-shrink:0;">Add</button>
+            </form>
+            <div class="chip-row" id="category-chips"></div>
+          </div>
+
+          <div class="panel">
+            <p class="panel-title">Notifications</p>
+            <p class="panel-sub">Raised by notification-service when task-service reports a due date.</p>
+            <div id="notif-list"><div class="empty-state">No notifications yet.</div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    TaskFlow.requireAuth();
+    renderNav("dashboard");
+
+    const categoryColor = {};
+    let currentFilter = "";
+
+    async function loadCategories() {
+      const categories = await TaskFlow.request("/categories");
+      const select = document.getElementById("task-category");
+      const chips = document.getElementById("category-chips");
+      select.innerHTML = '<option value="">None</option>';
+      chips.innerHTML = "";
+      categoryColor[""] = "#8b96af";
+
+      if (!categories.length) {
+        chips.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">No categories yet — add one above.</span>';
+      }
+
+      categories.forEach(c => {
+        categoryColor[c.id] = c.color;
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.name;
+        select.appendChild(opt);
+
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.innerHTML = `<span class="swatch" style="background:${c.color}"></span>${c.name}<button data-id="${c.id}" title="Delete category">&times;</button>`;
+        chip.querySelector("button").addEventListener("click", async () => {
+          try {
+            await TaskFlow.request(`/categories/${c.id}`, { method: "DELETE" });
+            TaskFlow.toast("Category deleted");
+            loadCategories();
+          } catch (err) { TaskFlow.toast(err.message, true); }
+        });
+        chips.appendChild(chip);
+      });
+    }
+
+    function categoryName(id, categories) {
+      const c = categories.find(x => x.id === id);
+      return c ? c.name : null;
+    }
+
+    async function loadTasks() {
+      const [tasks, categories] = await Promise.all([
+        TaskFlow.request(`/tasks${currentFilter ? "?status=" + currentFilter : ""}`),
+        TaskFlow.request("/categories"),
+      ]);
+      const list = document.getElementById("task-list");
+
+      if (!tasks.length) {
+        list.innerHTML = '<div class="empty-state">Nothing here. Add your first task on the left.</div>';
+        return;
+      }
+
+      list.innerHTML = "";
+      tasks.forEach(t => {
+        const row = document.createElement("div");
+        row.className = "task-row";
+        const cat = categories.find(c => c.id === t.category_id);
+        const done = t.status === "completed";
+        row.innerHTML = `
+          <div class="task-check ${done ? "checked" : ""}" data-id="${t.id}" data-done="${done}">${done ? "&#10003;" : ""}</div>
+          <div class="task-body">
+            <p class="task-title ${done ? "done" : ""}">${escapeHtml(t.title)}</p>
+            ${t.description ? `<p class="task-desc">${escapeHtml(t.description)}</p>` : ""}
+            <div class="task-meta">
+              <span class="pill pill-${t.status}"><span class="dot"></span>${t.status.replace("_", " ")}</span>
+              ${t.due_date ? `<span>Due ${t.due_date}</span>` : ""}
+              ${cat ? `<span class="category-tag"><span class="swatch" style="background:${cat.color}"></span>${escapeHtml(cat.name)}</span>` : ""}
+            </div>
+          </div>
+          <button class="btn-danger" data-del="${t.id}">Delete</button>
+        `;
+        list.appendChild(row);
+      });
+
+      list.querySelectorAll(".task-check").forEach(el => {
+        el.addEventListener("click", async () => {
+          const id = el.dataset.id;
+          const nowDone = el.dataset.done !== "true";
+          try {
+            await TaskFlow.request(`/tasks/${id}`, { method: "PUT", body: { status: nowDone ? "completed" : "pending" } });
+            loadTasks();
+          } catch (err) { TaskFlow.toast(err.message, true); }
+        });
+      });
+      list.querySelectorAll("[data-del]").forEach(el => {
+        el.addEventListener("click", async () => {
+          try {
+            await TaskFlow.request(`/tasks/${el.dataset.del}`, { method: "DELETE" });
+            TaskFlow.toast("Task deleted");
+            loadTasks();
+          } catch (err) { TaskFlow.toast(err.message, true); }
+        });
+      });
+    }
+
+    async function loadNotifications() {
+      const items = await TaskFlow.request("/notifications");
+      const list = document.getElementById("notif-list");
+      if (!items.length) {
+        list.innerHTML = '<div class="empty-state">No notifications yet.</div>';
+        return;
+      }
+      list.innerHTML = "";
+      items.slice(0, 8).forEach(n => {
+        const row = document.createElement("div");
+        row.className = "notif-row" + (n.read ? "" : " unread");
+        row.innerHTML = `
+          <span class="notif-dot"></span>
+          <div style="flex:1">${escapeHtml(n.message)}</div>
+          <span class="notif-time">${TaskFlow.timeAgo(n.created_at)}</span>
+        `;
+        if (!n.read) {
+          row.style.cursor = "pointer";
+          row.title = "Click to mark as read";
+          row.addEventListener("click", async () => {
+            try {
+              await TaskFlow.request(`/notifications/${n.id}/read`, { method: "PATCH" });
+              loadNotifications();
+            } catch (err) { TaskFlow.toast(err.message, true); }
+          });
+        }
+        list.appendChild(row);
+      });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    document.getElementById("task-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = document.getElementById("task-title").value.trim();
+      const description = document.getElementById("task-desc").value.trim();
+      const category_id = document.getElementById("task-category").value || null;
+      const due_date = document.getElementById("task-due").value || null;
+      try {
+        await TaskFlow.request("/tasks", {
+          method: "POST",
+          body: { title, description, category_id: category_id ? Number(category_id) : null, due_date },
+        });
+        e.target.reset();
+        TaskFlow.toast(due_date ? "Task added — reminder created" : "Task added");
+        loadTasks();
+        if (due_date) loadNotifications();
+      } catch (err) { TaskFlow.toast(err.message, true); }
+    });
+
+    document.getElementById("category-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("category-name").value.trim();
+      try {
+        await TaskFlow.request("/categories", { method: "POST", body: { name } });
+        e.target.reset();
+        loadCategories();
+      } catch (err) { TaskFlow.toast(err.message, true); }
+    });
+
+    document.querySelectorAll("[data-filter]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentFilter = btn.dataset.filter;
+        document.querySelectorAll("[data-filter]").forEach(b => b.style.color = "");
+        btn.style.color = "var(--accent)";
+        loadTasks();
+      });
+    });
+
+    (async function init() {
+      try {
+        await loadCategories();
+        await loadTasks();
+        await loadNotifications();
+      } catch (err) {
+        TaskFlow.toast(err.message, true);
+      }
+    })();
+  </script>
+</body>
+</html>

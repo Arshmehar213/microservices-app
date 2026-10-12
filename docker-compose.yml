@@ -1,0 +1,93 @@
+version: "3.9"
+
+x-jwt-secret: &jwt-secret
+  JWT_SECRET: "taskflow-dev-secret-change-me"
+
+services:
+  auth-service:
+    build: ./services/auth-service
+    ports: ["5001:5001"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5001
+      USER_SERVICE_URL: http://user-service:5002
+
+  user-service:
+    build: ./services/user-service
+    ports: ["5002:5002"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5002
+
+  task-service:
+    build: ./services/task-service
+    ports: ["5003:5003"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5003
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+
+  category-service:
+    build: ./services/category-service
+    ports: ["5004:5004"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5004
+
+  notification-service:
+    build: ./services/notification-service
+    ports: ["5005:5005"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5005
+
+  analytics-service:
+    build: ./services/analytics-service
+    ports: ["5006:5006"]
+    environment:
+      <<: *jwt-secret
+      PORT: 5006
+      TASK_SERVICE_URL: http://task-service:5003
+    depends_on: [task-service]
+
+  gateway-service:
+    build: ./services/gateway-service
+    ports: ["5000:5000"]
+    environment:
+      PORT: 5000
+      AUTH_SERVICE_URL: http://auth-service:5001
+      USER_SERVICE_URL: http://user-service:5002
+      TASK_SERVICE_URL: http://task-service:5003
+      CATEGORY_SERVICE_URL: http://category-service:5004
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+      ANALYTICS_SERVICE_URL: http://analytics-service:5006
+      HEALTH_SERVICE_URL: http://health-service:5007
+    depends_on:
+      - auth-service
+      - user-service
+      - task-service
+      - category-service
+      - notification-service
+      - analytics-service
+      - health-service
+
+  health-service:
+    build: ./services/health-service
+    ports: ["5007:5007"]
+    environment:
+      PORT: 5007
+      GATEWAY_URL: http://gateway-service:5000
+      AUTH_SERVICE_URL: http://auth-service:5001
+      USER_SERVICE_URL: http://user-service:5002
+      TASK_SERVICE_URL: http://task-service:5003
+      CATEGORY_SERVICE_URL: http://category-service:5004
+      NOTIFICATION_SERVICE_URL: http://notification-service:5005
+      ANALYTICS_SERVICE_URL: http://analytics-service:5006
+
+  frontend:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: python -m http.server 8080
+    ports: ["8080:8080"]

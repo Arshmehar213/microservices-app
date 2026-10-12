@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskFlow &mdash; Analytics</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+    <main class="main">
+      <div class="page-header">
+        <p class="eyebrow">analytics-service</p>
+        <h1>Your progress</h1>
+        <p>Computed on demand: analytics-service calls task-service's internal endpoint and aggregates the result — nothing is duplicated or cached.</p>
+      </div>
+
+      <div class="grid-3" style="margin-bottom:20px;">
+        <div class="stat-card">
+          <p class="stat-label">Total tasks</p>
+          <p class="stat-value" id="stat-total">&mdash;</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Completion rate</p>
+          <p class="stat-value accent" id="stat-rate">&mdash;</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-label">Overdue</p>
+          <p class="stat-value" id="stat-overdue">&mdash;</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Breakdown by status</p>
+        <p class="panel-sub">pending &rarr; in progress &rarr; completed</p>
+        <div id="bars"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/nav.js"></script>
+  <script>
+    TaskFlow.requireAuth();
+    renderNav("analytics");
+
+    const statusColor = { pending: "var(--degraded)", in_progress: "#818cf8", completed: "var(--up)" };
+    const statusLabel = { pending: "Pending", in_progress: "In progress", completed: "Completed" };
+
+    async function load() {
+      try {
+        const s = await TaskFlow.request("/analytics/summary");
+        document.getElementById("stat-total").textContent = s.total_tasks;
+        document.getElementById("stat-rate").textContent = s.completion_rate + "%";
+        const overdueEl = document.getElementById("stat-overdue");
+        overdueEl.textContent = s.overdue;
+        overdueEl.className = "stat-value " + (s.overdue > 0 ? "down" : "up");
+
+        const bars = document.getElementById("bars");
+        bars.innerHTML = "";
+        const max = Math.max(1, ...Object.values(s.by_status));
+        Object.entries(s.by_status).forEach(([key, count]) => {
+          const pct = Math.round((count / max) * 100);
+          const row = document.createElement("div");
+          row.className = "bar-row";
+          row.innerHTML = `
+            <span class="bar-label">${statusLabel[key] || key}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${pct}%;background:${statusColor[key] || "var(--accent)"}"></span></span>
+            <span class="bar-value">${count}</span>
+          `;
+          bars.appendChild(row);
+        });
+
+        if (s.total_tasks === 0) {
+          bars.innerHTML = '<div class="empty-state">Add a few tasks on the Tasks page to see stats here.</div>';
+        }
+      } catch (err) {
+        TaskFlow.toast(err.message, true);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
