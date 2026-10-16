@@ -10,7 +10,11 @@ on:
   pull_request:
     paths:
       - "services/**"
-
+  
+permissions:
+  contents: read
+  id-token: write 
+  
 jobs:
 
   detect-changes:
